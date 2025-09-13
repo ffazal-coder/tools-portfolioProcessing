@@ -952,16 +952,17 @@ class PortfolioGUI:
                     # Create Summary worksheet
                     summary_sheet = writer.book.add_worksheet('Portfolio Summary')
                     
-                    # Set column widths
-                    summary_sheet.set_column('A:A', 30)  # Description column
-                    summary_sheet.set_column('B:B', 20)  # Value column
-                    summary_sheet.set_column('C:C', 20)  # Additional data column
+                    # Set column widths and white background for all columns
+                    white_bg_format = workbook.add_format({'bg_color': '#FFFFFF'})
+                    summary_sheet.set_column('A:A', 30, white_bg_format)  # Description column
+                    summary_sheet.set_column('B:B', 20, white_bg_format)  # Value column
+                    summary_sheet.set_column('C:C', 20, white_bg_format)  # Additional data column
                     
                     # Define formats
                     title_format = workbook.add_format({
                         'bold': True,
                         'font_size': 14,
-                        'bg_color': '#DDEBF7',
+                        'bg_color': '#FFFFFF',  # Changed to white background
                         'border': 1,
                         'align': 'center',
                         'valign': 'vcenter'
@@ -969,39 +970,43 @@ class PortfolioGUI:
                     
                     header_format = workbook.add_format({
                         'bold': True,
-                        'bg_color': '#DDEBF7',
+                        'bg_color': '#FFFFFF',  # Changed to white background
                         'border': 1,
                         'align': 'left'
                     })
                     
                     subheader_format = workbook.add_format({
                         'bold': True,
-                        'bg_color': '#F2F2F2',
+                        'bg_color': '#FFFFFF',  # Changed to white background
                         'border': 1,
                         'align': 'left'
                     })
                     
                     data_format = workbook.add_format({
                         'border': 1,
-                        'align': 'left'
+                        'align': 'left',
+                        'bg_color': '#FFFFFF'  # Added white background
                     })
                     
                     currency_format = workbook.add_format({
                         'num_format': '$#,##0.00',
                         'border': 1,
-                        'align': 'right'
+                        'align': 'right',
+                        'bg_color': '#FFFFFF'  # Added white background
                     })
                     
                     percent_format = workbook.add_format({
                         'num_format': '0.00%',
                         'border': 1,
-                        'align': 'right'
+                        'align': 'right',
+                        'bg_color': '#FFFFFF'  # Added white background
                     })
                     
                     count_format = workbook.add_format({
                         'num_format': '#,##0',
                         'border': 1,
-                        'align': 'right'
+                        'align': 'right',
+                        'bg_color': '#FFFFFF'  # Added white background
                     })
                     
                     # Add title
