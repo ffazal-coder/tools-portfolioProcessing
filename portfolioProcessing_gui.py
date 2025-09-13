@@ -72,7 +72,7 @@ def map_and_extract(df, portfolio_name, original_col_order):
                 pass
     return df
 
-def consolidate_portfolios(dfs):
+def consolidate_portfolios(dfs, mm_interest_rates=None):
     if not dfs:
         return pd.DataFrame()
     
@@ -166,6 +166,7 @@ class PortfolioGUI:
         
         self.input_files = []
         self.portfolio_names = []
+        self.mm_interest_rates = {}  # Dictionary to store money market interest rates for each portfolio
         self.output_dir = self.downloads_dir
         self.progress_win = None
         self.progress_text = None
@@ -223,6 +224,7 @@ class PortfolioGUI:
         if files:
             self.input_files = list(files)
             self.portfolio_names = []
+            self.mm_interest_rates = {}  # Reset interest rates dictionary
             
             # Build a list of files to display in the UI
             files_display = []
@@ -235,13 +237,31 @@ class PortfolioGUI:
                     f"Enter a short name for this portfolio (default: {default_name}):"
                 ) or default_name
                 self.portfolio_names.append(portfolio_name)
-                files_display.append(f"• {base_name} as '{portfolio_name}'")
+                
+                # Ask for money market interest rate for this portfolio
+                default_rate = "4.0"  # Default 4%
+                mm_rate_str = simpledialog.askstring(
+                    "Money Market Interest Rate",
+                    f"Enter the money market interest rate for '{portfolio_name}' (default: {default_rate}%):",
+                    initialvalue=default_rate
+                ) or default_rate
+                
+                # Convert to float and store as decimal (0.04 for 4%)
+                try:
+                    mm_rate = float(mm_rate_str.replace('%', '')) / 100
+                    self.mm_interest_rates[portfolio_name] = mm_rate
+                    files_display.append(f"• {base_name} as '{portfolio_name}' (MM Rate: {mm_rate*100:.2f}%)")
+                except ValueError:
+                    # If conversion fails, use default
+                    self.mm_interest_rates[portfolio_name] = 0.04
+                    files_display.append(f"• {base_name} as '{portfolio_name}' (MM Rate: 4.00%)")
             
             self.files_label.config(text=f"{len(self.input_files)} files selected:")
             self.files_list.config(text="\n".join(files_display))
         else:
             self.input_files = []
             self.portfolio_names = []
+            self.mm_interest_rates = {}
             self.files_label.config(text="No files selected.")
             self.files_list.config(text="")
 
@@ -512,8 +532,56 @@ class PortfolioGUI:
                             else:
                                 worksheet.write(i+1, j, val, white_bg_format)
                 # Add consolidated tab
-                consolidated_df = consolidate_portfolios(dfs)
+                consolidated_df = consolidate_portfolios(dfs, self.mm_interest_rates)
                 if not consolidated_df.empty:
+                    # Set Interest/Dividend for Money Market holdings and calculate Monthly Income
+                    if 'Interest/Dividend' not in consolidated_df.columns:
+                        consolidated_df['Interest/Dividend'] = ""
+                    
+                    # Ensure Monthly Income column exists
+                    if 'Monthly Income' not in consolidated_df.columns:
+                        consolidated_df['Monthly Income'] = ""
+                    
+                    # Process Money Market holdings
+                    for idx, row in consolidated_df.iterrows():
+                        # Check if this is a Money Market holding using both Type and Holding Type columns
+                        type_val = str(row['Type']).strip().upper()
+                        holding_type = ""
+                        if 'Holding Type' in consolidated_df.columns:
+                            holding_type = str(row['Holding Type']).strip().upper()
+                        
+                        # Only consider rows as money market if the "Holding Type" column is "Money Market" or "MONEYMARKET"
+                        is_money_market = (
+                            holding_type == 'MONEY MARKET' or 
+                            holding_type == 'MONEYMARKET'
+                        )
+                        
+                        if is_money_market:
+                            self.log(f"Found Money Market: {row['Symbol']} - {row['Description']}")
+                            # Get the interest rate (either existing or set a new one)
+                            current_rate = pd.to_numeric(row['Interest/Dividend'], errors='coerce')
+                            rate = current_rate  # Default to using existing rate
+                            
+                            # If Interest/Dividend not set, use portfolio-specific or default rate
+                            if pd.isna(current_rate) or current_rate == 0:
+                                portfolio_name = row['Portfolio Name']
+                                if portfolio_name in self.mm_interest_rates:
+                                    rate = self.mm_interest_rates[portfolio_name]
+                                else:
+                                    rate = 0.04  # 4% default
+                                consolidated_df.at[idx, 'Interest/Dividend'] = rate
+                                self.log(f"Set interest rate for {row['Symbol']} to {rate*100:.2f}%")
+                            
+                            # Calculate monthly income for all money market holdings
+                            market_value = pd.to_numeric(row['Market Value'], errors='coerce')
+                            if not pd.isna(market_value) and market_value > 0:
+                                # Calculate monthly income (annual rate / 12 * market value)
+                                monthly_income = (rate / 12) * market_value
+                                consolidated_df.at[idx, 'Monthly Income'] = monthly_income
+                                self.log(f"Set Monthly Income for {row['Symbol']} to ${monthly_income:.2f} based on {rate*100:.2f}% interest rate")
+                    
+                    self.log("Money Market holdings processed with interest rates and monthly income calculations")
+                    
                     # Convert columns to numeric values but don't pre-format as strings
                     # This lets Excel handle the formatting and allows summing
                     currency_cols = ['Price', 'Market Value', 'Cost Basis', 'Gain/Loss $', 'Monthly Income']
@@ -538,6 +606,10 @@ class PortfolioGUI:
                     for col in currency_cols + ['Quantity']:
                         if col in consolidated_df.columns:
                             consolidated_df[col] = pd.to_numeric(consolidated_df[col], errors='coerce').fillna(0)
+                    
+                    # Ensure Interest/Dividend is properly formatted as a percentage
+                    if 'Interest/Dividend' in consolidated_df.columns:
+                        consolidated_df['Interest/Dividend'] = pd.to_numeric(consolidated_df['Interest/Dividend'], errors='coerce').fillna(0)
                     
                     consolidated_df.to_excel(writer, sheet_name='Consolidated Holdings', index=False)
                     workbook = writer.book
