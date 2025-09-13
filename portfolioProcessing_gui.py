@@ -337,7 +337,30 @@ class PortfolioGUI:
                              bg="#FF9800", fg="white",
                              padx=20, pady=10,
                              font=font.Font(size=12))
-        self.run_btn.pack(pady=20)
+        self.run_btn.pack(pady=10)
+        
+        # About button
+        self.about_btn = Button(self.root, text="About", 
+                             command=self.show_about,
+                             bg="#607D8B", fg="white",
+                             padx=15, pady=5,
+                             font=font.Font(size=10))
+        self.about_btn.pack(pady=10)
+
+    def show_about(self):
+        about_text = """Portfolio Tabulator
+
+This application processes portfolio data from Charles Schwab and Fidelity brokerage account downloads.
+
+Inputs:
+- Excel or CSV files exported from Charles Schwab or Fidelity accounts
+- Each file should contain position details for a single portfolio
+
+Output:
+- Consolidated Excel workbook with detailed portfolio analysis
+- Summary of all portfolios including market values, gain/loss, and income statistics
+"""
+        messagebox.showinfo("About Portfolio Tabulator", about_text)
 
     def select_files(self):
         files = filedialog.askopenfilenames(
