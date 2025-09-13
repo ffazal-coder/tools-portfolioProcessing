@@ -3,7 +3,8 @@ import numpy as np
 import os
 import sys
 import threading
-from tkinter import Tk, filedialog, simpledialog, messagebox, Button, Label, Toplevel
+from tkinter import Tk, filedialog, simpledialog, messagebox, Button, Label, Toplevel, Frame, Entry, StringVar
+from tkinter.constants import LEFT, RIGHT, TOP, BOTTOM, X, Y, BOTH
 from tkinter.scrolledtext import ScrolledText
 
 from portfolio_helpers import append_holding_info
@@ -158,7 +159,7 @@ class PortfolioGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Portfolio Tabulator")
-        self.root.geometry("600x500")
+        self.root.geometry("700x700")  # Increased width and height for better display
         self.root.configure(padx=20, pady=20)
         
         # Default to downloads directory
@@ -180,8 +181,8 @@ class PortfolioGUI:
         title_label.pack(pady=10)
         
         # File selection section with frame
-        files_frame = Label(self.root, relief="groove", padx=10, pady=10, bd=1)
-        files_frame.pack(fill="x", pady=10)
+        files_frame = Frame(self.root, relief="groove", padx=10, pady=10, bd=1)
+        files_frame.pack(fill="both", expand=True, pady=10)
         
         self.select_files_btn = Button(files_frame, text="Select Portfolio Files", 
                                       command=self.select_files, 
@@ -192,11 +193,16 @@ class PortfolioGUI:
         self.files_label = Label(files_frame, text="No files selected.")
         self.files_label.pack(pady=5)
         
-        self.files_list = Label(files_frame, text="", justify="left", wraplength=550)
-        self.files_list.pack(pady=5, fill="x")
+        # Create a proper scrollable text area for files list instead of a label
+        self.files_list_frame = Frame(files_frame)
+        self.files_list_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        self.files_list = ScrolledText(self.files_list_frame, wrap="word", width=50, height=8)
+        self.files_list.pack(fill="both", expand=True)
+        self.files_list.config(state="disabled")  # Make it read-only
         
         # Output directory section with frame
-        output_frame = Label(self.root, relief="groove", padx=10, pady=10, bd=1)
+        output_frame = Frame(self.root, relief="groove", padx=10, pady=10, bd=1)
         output_frame.pack(fill="x", pady=10)
         
         self.select_output_btn = Button(output_frame, text="Select Output Directory", 
@@ -232,19 +238,100 @@ class PortfolioGUI:
             for file_path in self.input_files:
                 base_name = os.path.basename(file_path)
                 default_name = os.path.splitext(base_name)[0][:25]
-                portfolio_name = simpledialog.askstring(
-                    "Portfolio Name",
-                    f"Enter a short name for this portfolio (default: {default_name}):"
-                ) or default_name
+                
+                # Create custom dialog with focus and transient properties
+                name_dialog_window = Toplevel(self.root)
+                name_dialog_window.title("Portfolio Name")
+                name_dialog_window.transient(self.root)  # Set as transient to main window
+                name_dialog_window.grab_set()  # Make dialog modal
+                name_dialog_window.geometry("400x150")  # Set reasonable size
+                name_dialog_window.lift()  # Bring to front
+                name_dialog_window.focus_force()  # Force focus
+                name_dialog_window.attributes("-topmost", True)  # Keep on top
+                
+                Label(name_dialog_window, text=f"Enter a short name for this portfolio (default: {default_name}):", 
+                      wraplength=350, pady=10).pack()
+                
+                entry_var = StringVar()
+                entry = Entry(name_dialog_window, textvariable=entry_var, width=40)
+                entry.pack(pady=10, padx=20)
+                entry.focus_set()  # Set focus to entry
+                
+                result = [None]  # To store the result
+                
+                def on_ok():
+                    result[0] = entry_var.get()
+                    name_dialog_window.destroy()
+                
+                def on_cancel():
+                    name_dialog_window.destroy()
+                
+                # Buttons frame
+                button_frame = Frame(name_dialog_window)
+                button_frame.pack(pady=10)
+                
+                Button(button_frame, text="OK", command=on_ok, width=10).pack(side=LEFT, padx=10)
+                Button(button_frame, text="Cancel", command=on_cancel, width=10).pack(side=LEFT)
+                
+                # Center the dialog on the main window
+                name_dialog_window.update_idletasks()
+                x = self.root.winfo_x() + (self.root.winfo_width() - name_dialog_window.winfo_width()) // 2
+                y = self.root.winfo_y() + (self.root.winfo_height() - name_dialog_window.winfo_height()) // 2
+                name_dialog_window.geometry(f"+{x}+{y}")
+                
+                # Wait for the dialog to be closed
+                self.root.wait_window(name_dialog_window)
+                
+                portfolio_name = result[0] or default_name
                 self.portfolio_names.append(portfolio_name)
                 
-                # Ask for money market interest rate for this portfolio
+                # Ask for money market interest rate for this portfolio using the same custom dialog approach
                 default_rate = "4.0"  # Default 4%
-                mm_rate_str = simpledialog.askstring(
-                    "Money Market Interest Rate",
-                    f"Enter the money market interest rate for '{portfolio_name}' (default: {default_rate}%):",
-                    initialvalue=default_rate
-                ) or default_rate
+                rate_dialog_window = Toplevel(self.root)
+                rate_dialog_window.title("Money Market Interest Rate")
+                rate_dialog_window.transient(self.root)  # Set as transient to main window
+                rate_dialog_window.grab_set()  # Make dialog modal
+                rate_dialog_window.geometry("450x150")  # Set reasonable size
+                rate_dialog_window.lift()  # Bring to front
+                rate_dialog_window.focus_force()  # Force focus
+                rate_dialog_window.attributes("-topmost", True)  # Keep on top
+                
+                Label(rate_dialog_window, 
+                      text=f"Enter the money market interest rate for '{portfolio_name}' (default: {default_rate}%):", 
+                      wraplength=400, pady=10).pack()
+                
+                rate_var = StringVar(value=default_rate)
+                rate_entry = Entry(rate_dialog_window, textvariable=rate_var, width=10)
+                rate_entry.pack(pady=10)
+                rate_entry.focus_set()  # Set focus to entry
+                rate_entry.select_range(0, len(default_rate))  # Select all text
+                
+                rate_result = [None]  # To store the result
+                
+                def on_rate_ok():
+                    rate_result[0] = rate_var.get()
+                    rate_dialog_window.destroy()
+                
+                def on_rate_cancel():
+                    rate_dialog_window.destroy()
+                
+                # Buttons frame
+                rate_button_frame = Frame(rate_dialog_window)
+                rate_button_frame.pack(pady=10)
+                
+                Button(rate_button_frame, text="OK", command=on_rate_ok, width=10).pack(side=LEFT, padx=10)
+                Button(rate_button_frame, text="Cancel", command=on_rate_cancel, width=10).pack(side=LEFT)
+                
+                # Center the dialog on the main window
+                rate_dialog_window.update_idletasks()
+                x = self.root.winfo_x() + (self.root.winfo_width() - rate_dialog_window.winfo_width()) // 2
+                y = self.root.winfo_y() + (self.root.winfo_height() - rate_dialog_window.winfo_height()) // 2
+                rate_dialog_window.geometry(f"+{x}+{y}")
+                
+                # Wait for the dialog to be closed
+                self.root.wait_window(rate_dialog_window)
+                
+                mm_rate_str = rate_result[0] or default_rate
                 
                 # Convert to float and store as decimal (0.04 for 4%)
                 try:
@@ -257,13 +344,20 @@ class PortfolioGUI:
                     files_display.append(f"• {base_name} as '{portfolio_name}' (MM Rate: 4.00%)")
             
             self.files_label.config(text=f"{len(self.input_files)} files selected:")
-            self.files_list.config(text="\n".join(files_display))
+            
+            # Update the scrollable files list
+            self.files_list.config(state="normal")  # Enable editing to update
+            self.files_list.delete(1.0, "end")      # Clear current content
+            self.files_list.insert("end", "\n".join(files_display))
+            self.files_list.config(state="disabled")  # Return to read-only
         else:
             self.input_files = []
             self.portfolio_names = []
             self.mm_interest_rates = {}
             self.files_label.config(text="No files selected.")
-            self.files_list.config(text="")
+            self.files_list.config(state="normal")
+            self.files_list.delete(1.0, "end")
+            self.files_list.config(state="disabled")
 
     def select_output_dir(self):
         dir_path = filedialog.askdirectory(title="Choose Output Directory", initialdir=self.downloads_dir)
@@ -289,6 +383,15 @@ class PortfolioGUI:
         self.progress_win = Toplevel(self.root)
         self.progress_win.title("Progress / Debug Messages")
         self.progress_win.geometry("700x500")
+        self.progress_win.transient(self.root)  # Set as transient to main window
+        self.progress_win.lift()  # Bring to front
+        self.progress_win.focus_force()  # Force focus
+        
+        # Position the progress window relative to the main window
+        self.progress_win.update_idletasks()
+        x = self.root.winfo_x() + 50
+        y = self.root.winfo_y() + 50
+        self.progress_win.geometry(f"+{x}+{y}")
         
         # Add a title to the progress window
         progress_title = Label(self.progress_win, text="Processing Files...", font=("Arial", 12, "bold"))
