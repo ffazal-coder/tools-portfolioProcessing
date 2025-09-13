@@ -155,6 +155,123 @@ def consolidate_portfolios(dfs, mm_interest_rates=None):
     ordered_cols = list(dfs[0].columns) + [col for col in all_columns if col not in dfs[0].columns]
     return combined[ordered_cols]
 
+def generate_portfolio_summary(dfs, consolidated_df, mm_interest_rates=None):
+    """
+    Generate a summary of the consolidated portfolio data
+    
+    Args:
+        dfs: List of individual portfolio dataframes
+        consolidated_df: Consolidated portfolio dataframe
+        mm_interest_rates: Dictionary of money market interest rates by portfolio name
+        
+    Returns:
+        Dictionary of summary information
+    """
+    summary = {}
+    
+    # 1. Overall Portfolio Statistics
+    summary['num_portfolios'] = len(dfs)
+    summary['total_holdings'] = len(consolidated_df)
+    
+    # Calculate total market value and cost basis
+    total_market_value = pd.to_numeric(consolidated_df['Market Value'], errors='coerce').sum()
+    summary['total_market_value'] = total_market_value
+    
+    total_cost_basis = pd.to_numeric(consolidated_df['Cost Basis'], errors='coerce').sum()
+    summary['total_cost_basis'] = total_cost_basis
+    
+    # Calculate total gain/loss
+    total_gain_loss = pd.to_numeric(consolidated_df['Gain/Loss $'], errors='coerce').sum()
+    summary['total_gain_loss'] = total_gain_loss
+    
+    if total_cost_basis > 0:
+        summary['total_gain_loss_percent'] = (total_gain_loss / total_cost_basis) * 100
+    else:
+        summary['total_gain_loss_percent'] = 0
+    
+    # Calculate total monthly income
+    if 'Monthly Income' in consolidated_df.columns:
+        monthly_income = pd.to_numeric(consolidated_df['Monthly Income'], errors='coerce').sum()
+        summary['total_monthly_income'] = monthly_income
+    else:
+        summary['total_monthly_income'] = 0
+    
+    # 2. Individual Portfolio Breakdown
+    portfolio_breakdown = []
+    for df, name in zip(dfs, [df['Portfolio Name'].iloc[0] for df in dfs]):
+        portfolio_market_value = pd.to_numeric(df['Market Value'], errors='coerce').sum()
+        portfolio_cost_basis = pd.to_numeric(df['Cost Basis'], errors='coerce').sum()
+        portfolio_gain_loss = pd.to_numeric(df['Gain/Loss $'], errors='coerce').sum()
+        
+        portfolio_data = {
+            'name': name,
+            'market_value': portfolio_market_value,
+            'cost_basis': portfolio_cost_basis,
+            'gain_loss': portfolio_gain_loss,
+            'percent_of_total': (portfolio_market_value / total_market_value * 100) if total_market_value > 0 else 0,
+            'num_holdings': len(df)
+        }
+        
+        # Calculate portfolio monthly income if applicable
+        if 'Monthly Income' in df.columns:
+            portfolio_data['monthly_income'] = pd.to_numeric(df['Monthly Income'], errors='coerce').sum()
+        
+        portfolio_breakdown.append(portfolio_data)
+    
+    summary['portfolio_breakdown'] = portfolio_breakdown
+    
+    # 3. Asset Type Allocation
+    if 'Type' in consolidated_df.columns or 'Holding Type' in consolidated_df.columns:
+        # Determine which column to use for type breakdown
+        type_column = 'Holding Type' if 'Holding Type' in consolidated_df.columns else 'Type'
+        
+        # Group by type and calculate market value and percentages
+        type_groups = consolidated_df.groupby(type_column)
+        
+        asset_types = []
+        for type_name, group in type_groups:
+            type_market_value = pd.to_numeric(group['Market Value'], errors='coerce').sum()
+            type_cost_basis = pd.to_numeric(group['Cost Basis'], errors='coerce').sum()
+            type_gain_loss = pd.to_numeric(group['Gain/Loss $'], errors='coerce').sum()
+            
+            asset_type = {
+                'type': type_name,
+                'market_value': type_market_value,
+                'cost_basis': type_cost_basis,
+                'gain_loss': type_gain_loss,
+                'percent_of_total': (type_market_value / total_market_value * 100) if total_market_value > 0 else 0,
+                'num_holdings': len(group)
+            }
+            
+            # Calculate type monthly income if applicable
+            if 'Monthly Income' in group.columns:
+                asset_type['monthly_income'] = pd.to_numeric(group['Monthly Income'], errors='coerce').sum()
+            
+            asset_types.append(asset_type)
+        
+        summary['asset_types'] = asset_types
+    
+    # 4. Top Holdings
+    # Calculate top 10 holdings by market value
+    if not consolidated_df.empty:
+        top_holdings = consolidated_df.sort_values(by='Market Value', ascending=False).head(10)
+        summary['top_holdings'] = top_holdings.to_dict('records')
+    
+    # 5. Income Summary
+    if 'Monthly Income' in consolidated_df.columns:
+        # Top 10 income-generating holdings
+        top_income = consolidated_df.sort_values(by='Monthly Income', ascending=False).head(10)
+        summary['top_income_holdings'] = top_income.to_dict('records')
+        
+        # Calculate portfolio yield
+        annual_income = summary['total_monthly_income'] * 12
+        if total_market_value > 0:
+            summary['portfolio_yield'] = (annual_income / total_market_value) * 100
+        else:
+            summary['portfolio_yield'] = 0
+    
+    return summary
+
 class PortfolioGUI:
     def __init__(self, root):
         self.root = root
@@ -825,6 +942,210 @@ class PortfolioGUI:
                                     worksheet.write(i+1, j, val, white_bg_format)
                             else:
                                 worksheet.write(i+1, j, val, white_bg_format)
+                    
+                    # Generate and add Portfolio Summary tab
+                    self.log("Creating Portfolio Summary tab...")
+                    
+                    # Generate summary data
+                    summary_data = generate_portfolio_summary(dfs, consolidated_df, self.mm_interest_rates)
+                    
+                    # Create Summary worksheet
+                    summary_sheet = writer.book.add_worksheet('Portfolio Summary')
+                    
+                    # Set column widths
+                    summary_sheet.set_column('A:A', 30)  # Description column
+                    summary_sheet.set_column('B:B', 20)  # Value column
+                    summary_sheet.set_column('C:C', 20)  # Additional data column
+                    
+                    # Define formats
+                    title_format = workbook.add_format({
+                        'bold': True,
+                        'font_size': 14,
+                        'bg_color': '#DDEBF7',
+                        'border': 1,
+                        'align': 'center',
+                        'valign': 'vcenter'
+                    })
+                    
+                    header_format = workbook.add_format({
+                        'bold': True,
+                        'bg_color': '#DDEBF7',
+                        'border': 1,
+                        'align': 'left'
+                    })
+                    
+                    subheader_format = workbook.add_format({
+                        'bold': True,
+                        'bg_color': '#F2F2F2',
+                        'border': 1,
+                        'align': 'left'
+                    })
+                    
+                    data_format = workbook.add_format({
+                        'border': 1,
+                        'align': 'left'
+                    })
+                    
+                    currency_format = workbook.add_format({
+                        'num_format': '$#,##0.00',
+                        'border': 1,
+                        'align': 'right'
+                    })
+                    
+                    percent_format = workbook.add_format({
+                        'num_format': '0.00%',
+                        'border': 1,
+                        'align': 'right'
+                    })
+                    
+                    count_format = workbook.add_format({
+                        'num_format': '#,##0',
+                        'border': 1,
+                        'align': 'right'
+                    })
+                    
+                    # Add title
+                    summary_sheet.merge_range('A1:C1', 'CONSOLIDATED PORTFOLIO SUMMARY', title_format)
+                    
+                    # Add current date
+                    from datetime import datetime
+                    current_date = datetime.now().strftime("%B %d, %Y")
+                    summary_sheet.merge_range('A2:C2', f'Generated on: {current_date}', header_format)
+                    
+                    # Section 1: Overall Portfolio Statistics
+                    summary_sheet.merge_range('A4:C4', 'OVERALL PORTFOLIO STATISTICS', header_format)
+                    
+                    row = 4
+                    # Number of portfolios
+                    summary_sheet.write(row, 0, 'Number of Portfolios:', data_format)
+                    summary_sheet.write(row, 1, summary_data['num_portfolios'], count_format)
+                    row += 1
+                    
+                    # Total Holdings
+                    summary_sheet.write(row, 0, 'Total Number of Holdings:', data_format)
+                    summary_sheet.write(row, 1, summary_data['total_holdings'], count_format)
+                    row += 1
+                    
+                    # Total Market Value
+                    summary_sheet.write(row, 0, 'Total Market Value:', data_format)
+                    summary_sheet.write(row, 1, summary_data['total_market_value'], currency_format)
+                    row += 1
+                    
+                    # Total Cost Basis
+                    summary_sheet.write(row, 0, 'Total Cost Basis:', data_format)
+                    summary_sheet.write(row, 1, summary_data['total_cost_basis'], currency_format)
+                    row += 1
+                    
+                    # Total Gain/Loss
+                    summary_sheet.write(row, 0, 'Total Gain/Loss ($):', data_format)
+                    summary_sheet.write(row, 1, summary_data['total_gain_loss'], currency_format)
+                    row += 1
+                    
+                    # Total Gain/Loss Percent
+                    summary_sheet.write(row, 0, 'Total Gain/Loss (%):', data_format)
+                    summary_sheet.write(row, 1, summary_data['total_gain_loss_percent']/100, percent_format)
+                    row += 1
+                    
+                    # Total Monthly Income
+                    summary_sheet.write(row, 0, 'Total Monthly Income:', data_format)
+                    summary_sheet.write(row, 1, summary_data['total_monthly_income'], currency_format)
+                    row += 1
+                    
+                    # Annualized Income
+                    summary_sheet.write(row, 0, 'Annualized Income:', data_format)
+                    summary_sheet.write(row, 1, summary_data['total_monthly_income'] * 12, currency_format)
+                    row += 1
+                    
+                    # Portfolio Yield
+                    if 'portfolio_yield' in summary_data:
+                        summary_sheet.write(row, 0, 'Portfolio Yield:', data_format)
+                        summary_sheet.write(row, 1, summary_data['portfolio_yield']/100, percent_format)
+                        row += 1
+                    
+                    # Section 2: Individual Portfolio Breakdown
+                    row += 1
+                    summary_sheet.merge_range(f'A{row+1}:C{row+1}', 'INDIVIDUAL PORTFOLIO BREAKDOWN', header_format)
+                    row += 1
+                    
+                    # Column headers
+                    summary_sheet.write(row, 0, 'Portfolio Name', subheader_format)
+                    summary_sheet.write(row, 1, 'Market Value', subheader_format)
+                    summary_sheet.write(row, 2, '% of Total', subheader_format)
+                    row += 1
+                    
+                    # Portfolio data
+                    for portfolio in summary_data['portfolio_breakdown']:
+                        summary_sheet.write(row, 0, portfolio['name'], data_format)
+                        summary_sheet.write(row, 1, portfolio['market_value'], currency_format)
+                        summary_sheet.write(row, 2, portfolio['percent_of_total']/100, percent_format)
+                        row += 1
+                    
+                    # Section 3: Asset Type Allocation
+                    if 'asset_types' in summary_data:
+                        row += 1
+                        summary_sheet.merge_range(f'A{row+1}:C{row+1}', 'ASSET TYPE ALLOCATION', header_format)
+                        row += 1
+                        
+                        # Column headers
+                        summary_sheet.write(row, 0, 'Asset Type', subheader_format)
+                        summary_sheet.write(row, 1, 'Market Value', subheader_format)
+                        summary_sheet.write(row, 2, '% of Total', subheader_format)
+                        row += 1
+                        
+                        # Asset type data
+                        for asset_type in summary_data['asset_types']:
+                            summary_sheet.write(row, 0, asset_type['type'], data_format)
+                            summary_sheet.write(row, 1, asset_type['market_value'], currency_format)
+                            summary_sheet.write(row, 2, asset_type['percent_of_total']/100, percent_format)
+                            row += 1
+                    
+                    # Section 4: Top Holdings
+                    if 'top_holdings' in summary_data:
+                        row += 1
+                        summary_sheet.merge_range(f'A{row+1}:C{row+1}', 'TOP 10 HOLDINGS BY VALUE', header_format)
+                        row += 1
+                        
+                        # Column headers
+                        summary_sheet.write(row, 0, 'Security', subheader_format)
+                        summary_sheet.write(row, 1, 'Market Value', subheader_format)
+                        summary_sheet.write(row, 2, '% of Total', subheader_format)
+                        row += 1
+                        
+                        # Top holdings data
+                        for holding in summary_data['top_holdings']:
+                            holding_name = f"{holding['Symbol']} - {holding['Description']}"
+                            market_value = pd.to_numeric(holding['Market Value'], errors='coerce')
+                            percent = pd.to_numeric(holding['% of Account'], errors='coerce')
+                            
+                            summary_sheet.write(row, 0, holding_name, data_format)
+                            summary_sheet.write(row, 1, market_value, currency_format)
+                            summary_sheet.write(row, 2, percent/100, percent_format)
+                            row += 1
+                    
+                    # Section 5: Top Income Holdings
+                    if 'top_income_holdings' in summary_data:
+                        row += 1
+                        summary_sheet.merge_range(f'A{row+1}:C{row+1}', 'TOP 10 INCOME PRODUCING HOLDINGS', header_format)
+                        row += 1
+                        
+                        # Column headers
+                        summary_sheet.write(row, 0, 'Security', subheader_format)
+                        summary_sheet.write(row, 1, 'Monthly Income', subheader_format)
+                        summary_sheet.write(row, 2, 'Annual Income', subheader_format)
+                        row += 1
+                        
+                        # Top income holdings data
+                        for holding in summary_data['top_income_holdings']:
+                            holding_name = f"{holding['Symbol']} - {holding['Description']}"
+                            monthly_income = pd.to_numeric(holding['Monthly Income'], errors='coerce')
+                            
+                            summary_sheet.write(row, 0, holding_name, data_format)
+                            summary_sheet.write(row, 1, monthly_income, currency_format)
+                            summary_sheet.write(row, 2, monthly_income * 12, currency_format)
+                            row += 1
+                    
+                    self.log("Portfolio Summary tab created successfully")
+            
             self.log(f"Success! Output saved to {output_path}")
             messagebox.showinfo("Success!", f"Output saved to {output_path}")
             
