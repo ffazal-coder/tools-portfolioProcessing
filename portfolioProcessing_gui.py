@@ -897,6 +897,49 @@ Output:
                 if df_proc.empty:
                     self.log(f"No valid data found in {file_path}")
                     continue
+                
+                # Process Money Market holdings for individual portfolio
+                if 'Interest/Dividend' not in df_proc.columns:
+                    df_proc['Interest/Dividend'] = ""
+                
+                # Ensure Monthly Income column exists
+                if 'Monthly Income' not in df_proc.columns:
+                    df_proc['Monthly Income'] = ""
+                
+                # Process Money Market holdings
+                for idx, row in df_proc.iterrows():
+                    # Check if this is a Money Market holding using both Type and Holding Type columns
+                    type_val = str(row['Type']).strip().upper()
+                    holding_type = ""
+                    if 'Holding Type' in df_proc.columns:
+                        holding_type = str(row['Holding Type']).strip().upper()
+                    
+                    # Only consider rows as money market if the "Holding Type" column is "Money Market" or "MONEYMARKET"
+                    is_money_market = (
+                        holding_type == 'MONEY MARKET' or 
+                        holding_type == 'MONEYMARKET'
+                    )
+                    
+                    if is_money_market:
+                        # Get the interest rate (either existing or set a new one)
+                        current_rate = pd.to_numeric(row['Interest/Dividend'], errors='coerce')
+                        rate = current_rate  # Default to using existing rate
+                        
+                        # If Interest/Dividend not set, use portfolio-specific or default rate
+                        if pd.isna(current_rate) or current_rate == 0:
+                            if portfolio_name in self.mm_interest_rates:
+                                rate = self.mm_interest_rates[portfolio_name]
+                            else:
+                                rate = 0.04  # 4% default
+                            df_proc.at[idx, 'Interest/Dividend'] = rate
+                        
+                        # Calculate monthly income for all money market holdings
+                        market_value = pd.to_numeric(row['Market Value'], errors='coerce')
+                        if not pd.isna(market_value) and market_value > 0:
+                            # Calculate monthly income (annual rate / 12 * market value)
+                            monthly_income = (rate / 12) * market_value
+                            df_proc.at[idx, 'Monthly Income'] = monthly_income
+                
                 dfs.append(df_proc)
                 sheet_names.append(portfolio_name[:31])
             if not dfs:
